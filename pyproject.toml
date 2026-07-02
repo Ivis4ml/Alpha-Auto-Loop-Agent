@@ -47,12 +47,24 @@ python_version = "3.13"
 strict = true
 packages = ["alphaloop", "news", "apps", "evalharness"]
 
+# pandas-stubs 对 groupby 变换与透视表的返回类型标注不完整，
+# 以下两个模块定向豁免相应错误码，其余检查保持严格。
+[[tool.mypy.overrides]]
+module = ["alphaloop.core.dsl.operators"]
+disable_error_code = ["no-any-return", "call-overload"]
+
+[[tool.mypy.overrides]]
+module = ["alphaloop.core.backtest.engine"]
+disable_error_code = ["misc"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
 # ---------------------------------------------------------------------------
 # 分层契约：机械可校验，覆盖全部层级（对照 AlphaForge 只校验三层的教训）。
-# 自底向上：infra < contracts < core < market < data < (govern | llm | execution) < loop。
+# 自底向上：infra < contracts < market < core < data < (govern | llm | execution) < loop。
+# 市场描述是被核心计算消费的基础词汇（回测引擎按 MarketSpec 注入约束），
+# 故位于 core 之下；market 层顶层文件仍受市场中立检查约束。
 # news 与 apps 是 alphaloop 的消费方；evalharness 依赖 alphaloop，反向禁止。
 # ---------------------------------------------------------------------------
 [tool.importlinter]
@@ -66,8 +78,8 @@ layers = [
     "alphaloop.loop",
     "alphaloop.govern | alphaloop.llm | alphaloop.execution",
     "alphaloop.data",
-    "alphaloop.market",
     "alphaloop.core",
+    "alphaloop.market",
     "alphaloop.contracts",
     "alphaloop.infra",
 ]
