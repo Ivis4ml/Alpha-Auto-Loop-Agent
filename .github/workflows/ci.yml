@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: 代码规范检查 (ruff)
+        run: ruff check .
+      - name: 类型检查 (mypy)
+        run: mypy
+      - name: 分层契约校验 (import-linter)
+        run: lint-imports
+      - name: 分层绕过检测自测与全仓库扫描
+        run: |
+          python tools/check_import_bypass.py --self-test
+          python tools/check_import_bypass.py
+      - name: 市场中立断言自测与全仓库扫描
+        run: |
+          python tools/check_market_neutral.py --self-test
+          python tools/check_market_neutral.py
+      - name: 单元测试 (pytest)
+        run: pytest -q
