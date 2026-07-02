@@ -47,19 +47,22 @@ class SplitConfig:
 
 @dataclass(frozen=True, slots=True)
 class GateConfig:
-    """统计与成本门控配置。"""
+    """统计与成本门控配置。dsr_min 为 Deflated Sharpe 概率下限，0 表示不启用。"""
 
     fdr_q: float = 0.10
     top_k: int = 5
     commission_bps: float = 2.5
     slippage_bps: float = 5.0
     min_train_ic_t: float = 2.0
+    dsr_min: float = 0.0
 
     def __post_init__(self) -> None:
         if not 0.0 < self.fdr_q < 1.0:
             raise ValueError(f"fdr_q 必须在 (0, 1) 内: {self.fdr_q}")
         if self.top_k <= 0:
             raise ValueError("top_k 必须为正")
+        if not 0.0 <= self.dsr_min < 1.0:
+            raise ValueError(f"dsr_min 必须在 [0, 1) 内: {self.dsr_min}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +83,11 @@ class RunConfig:
     gate: GateConfig
     schema_version: str = SCHEMA_VERSION
     grammar_version: str = GRAMMAR_VERSION
+    n_rounds: int = 1
+    llm_generator_model: str | None = None
+    llm_reviewer_model: str | None = None
+    prompt_version: str | None = None
+    llm_cache_mode: str = "off"
 
     def __post_init__(self) -> None:
         if self.candidate_budget <= 0 or self.compute_budget <= 0:
@@ -88,6 +96,14 @@ class RunConfig:
             raise ValueError("候选预算不能超过算力预算")
         if not self.field_scope:
             raise ValueError("字段范围为空")
+        if self.n_rounds < 1:
+            raise ValueError("轮数必须为正")
+        if self.mode == "A" and self.n_rounds != 1:
+            raise ValueError("模式 A 只允许单轮（仅先验推理、验证一次）")
+        if self.mode == "B" and self.gate.dsr_min <= 0.0:
+            raise ValueError("模式 B 必须启用 DSR 紧缩门控（gate.dsr_min > 0）")
+        if self.candidate_budget % self.n_rounds != 0:
+            raise ValueError("候选预算必须能被轮数整除，保证各轮预算一致")
 
     def protocol_id(self) -> str:
         """六维实验协议标识。"""
@@ -116,6 +132,10 @@ class RunConfig:
             "mode": self.mode,
             "root_seed": self.root_seed,
             "dataset_fingerprint": self.dataset_fingerprint,
+            "n_rounds": self.n_rounds,
+            "llm_generator_model": self.llm_generator_model,
+            "llm_reviewer_model": self.llm_reviewer_model,
+            "prompt_version": self.prompt_version,
         }
 
     def to_json(self) -> dict[str, Any]:

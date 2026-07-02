@@ -29,6 +29,7 @@ SPLIT = SplitConfig(
 
 
 def make_config(store: MinuteStore, *, mode: str = "A", seed: int = 42) -> RunConfig:
+    gate = GateConfig(top_k=3) if mode == "A" else GateConfig(top_k=3, dsr_min=0.90)
     return RunConfig(
         run_id=f"test-{store.market.market_id}-{mode}-{seed}",
         root_seed=seed,
@@ -41,7 +42,7 @@ def make_config(store: MinuteStore, *, mode: str = "A", seed: int = 42) -> RunCo
         universe_size=5,
         generator_id="template_v1",
         split=SPLIT,
-        gate=GateConfig(top_k=3),
+        gate=gate,
     )
 
 

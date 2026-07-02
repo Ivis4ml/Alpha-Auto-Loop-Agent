@@ -15,9 +15,11 @@ __all__ = ["FeedbackPolicy", "ModeAPolicy", "ModeBPolicy"]
 _ALLOWED_BUCKET_VALUES = frozenset(
     {
         "rejected_static",
+        "rejected_review",
         "rejected_train",
         "rejected_fdr",
         "rejected_cost",
+        "insample_pass",
         "accepted",
         "positive",
         "negative",
