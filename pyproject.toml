@@ -1,0 +1,114 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alpha-auto-loop-agent"
+version = "0.1.0"
+description = "市场无关、大语言模型驱动的自动化因子研究与交易计划 Agent（美股与 A 股双市场）"
+requires-python = ">=3.13"
+readme = "README.md"
+dependencies = [
+    "numpy>=2",
+    "duckdb>=1.5",
+    "pandas>=2.2",
+    "pyarrow>=17",
+    "jieba>=0.42",
+    "pyahocorasick>=2.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "hypothesis>=6",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "import-linter>=2",
+]
+
+[tool.setuptools.packages.find]
+include = ["alphaloop*", "news*", "apps*", "evalharness*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "RET", "SIM", "ANN"]
+ignore = ["ANN401"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+packages = ["alphaloop", "news", "apps", "evalharness"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+# ---------------------------------------------------------------------------
+# 分层契约：机械可校验，覆盖全部层级（对照 AlphaForge 只校验三层的教训）。
+# 自底向上：infra < contracts < core < market < data < (govern | llm | execution) < loop。
+# news 与 apps 是 alphaloop 的消费方；evalharness 依赖 alphaloop，反向禁止。
+# ---------------------------------------------------------------------------
+[tool.importlinter]
+root_packages = ["alphaloop", "news", "apps", "evalharness"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "alphaloop 全层 layered 契约"
+type = "layers"
+layers = [
+    "alphaloop.loop",
+    "alphaloop.govern | alphaloop.llm | alphaloop.execution",
+    "alphaloop.data",
+    "alphaloop.market",
+    "alphaloop.core",
+    "alphaloop.contracts",
+    "alphaloop.infra",
+]
+
+[[tool.importlinter.contracts]]
+name = "纯函数层禁止副作用依赖（网络、子进程、重扫描引擎）"
+type = "forbidden"
+source_modules = [
+    "alphaloop.core",
+    "alphaloop.market",
+    "alphaloop.contracts",
+    "alphaloop.infra",
+]
+forbidden_modules = [
+    "duckdb",
+    "requests",
+    "socket",
+    "subprocess",
+    "http",
+    "urllib",
+]
+
+[[tool.importlinter.contracts]]
+name = "alphaloop 禁止依赖评估 harness 与消费方（注入参数隔离的静态保证）"
+type = "forbidden"
+source_modules = ["alphaloop"]
+forbidden_modules = ["evalharness", "news", "apps"]
+
+[[tool.importlinter.contracts]]
+name = "治理判定不得依赖大语言模型层"
+type = "forbidden"
+source_modules = ["alphaloop.govern"]
+forbidden_modules = ["alphaloop.llm"]
+
+[[tool.importlinter.contracts]]
+name = "news 只能经 contracts、infra 与 llm 客户端接入 alphaloop"
+type = "forbidden"
+source_modules = ["news"]
+forbidden_modules = [
+    "alphaloop.core",
+    "alphaloop.market",
+    "alphaloop.data",
+    "alphaloop.govern",
+    "alphaloop.execution",
+    "alphaloop.loop",
+]

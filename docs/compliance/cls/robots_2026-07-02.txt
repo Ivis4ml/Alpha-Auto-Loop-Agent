@@ -1,0 +1,16 @@
+#User-agent:* //制定规则适用于哪个蜘蛛,'*'代表所有搜索引擎
+#Disallow: /（禁止蜘蛛爬取网站的所有目录 "/" 表示根目录下）
+#Allow:（用来定义允许蜘蛛爬取的页面或子目录）
+#Sitemap：告诉蜘蛛XML网站地图在哪里。
+
+
+User-agent:*
+Disallow: /hwwebscan_verify.html
+Disallow: /Iy6GOsvTTa.txt
+Disallow: /wb_82fb1c33119f7a95.txt
+Disallow: .jpg$
+Disallow: .jpeg$
+Disallow: .gif$
+Disallow: .png$
+Disallow: .bmp$
+Sitemap: https://www.cls.cn/map.xml
