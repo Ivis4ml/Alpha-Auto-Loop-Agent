@@ -29,6 +29,9 @@ SCAN_ROOTS = (
     "alphaloop/execution",
     "alphaloop/loop",
 )
+# market 层的顶层文件（协议、注册表、通用日历）同样必须市场中立；
+# 只有具体市场子包（us_equity、cn_ashare 等）允许出现市场身份。
+SCAN_FLAT = ("alphaloop/market",)
 SCAN_SUFFIXES = (".py", ".md", ".txt", ".yaml", ".yml", ".json")
 ALLOW_MARKER = re.compile(r"#\s*market-neutral:\s*allow\((?P<reason>[^)]+)\)")
 
@@ -75,6 +78,13 @@ def scan_repository(repo_root: Path) -> list[Violation]:
         if not directory.is_dir():
             continue
         for path in sorted(directory.rglob("*")):
+            if path.is_file() and path.suffix in SCAN_SUFFIXES:
+                violations.extend(scan_text(path, path.read_text(encoding="utf-8")))
+    for root in SCAN_FLAT:
+        directory = repo_root / root
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.glob("*")):
             if path.is_file() and path.suffix in SCAN_SUFFIXES:
                 violations.extend(scan_text(path, path.read_text(encoding="utf-8")))
     return violations

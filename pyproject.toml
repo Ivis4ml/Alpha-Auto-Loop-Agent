@@ -24,6 +24,8 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     "import-linter>=2",
+    "pandas-stubs>=2.2",
+    "pyarrow-stubs>=17",
 ]
 
 [tool.setuptools.packages.find]
