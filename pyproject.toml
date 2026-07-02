@@ -57,6 +57,11 @@ disable_error_code = ["no-any-return", "call-overload"]
 module = ["alphaloop.core.backtest.engine"]
 disable_error_code = ["misc"]
 
+# jieba 与 pyahocorasick 无类型标注，按未类型化第三方处理。
+[[tool.mypy.overrides]]
+module = ["jieba", "ahocorasick"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
