@@ -10,7 +10,7 @@ dist/
 build/
 node_modules/
 .DS_Store
-runs/
-runs_cache/
-llm_cache/
-data/
+/runs/
+/runs_cache/
+/llm_cache/
+/data/
