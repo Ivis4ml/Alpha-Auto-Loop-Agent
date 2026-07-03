@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from alphaloop.contracts.feature_panel import FeaturePanelManifest
+from alphaloop.contracts.feature_panel import FeaturePanelManifest, panel_content_fingerprint
 from alphaloop.contracts.market_view import MarketCalendarView
 from alphaloop.infra.hashing import content_hash
 from news.entity import DEFAULT_CONFIDENCE_THRESHOLD
@@ -136,7 +136,7 @@ def build_sentiment_panel(
         market_id=market_id,
         grain="date_symbol",
         columns=tuple(str(column) for column in panel.columns),
-        fingerprint=content_hash("sentiment-panel", panel.to_csv(index=False)),
+        fingerprint=panel_content_fingerprint(panel.to_csv(index=False)),
         visibility_ts_column="visible_ts",
         snapshot_start=start.isoformat(),
         no_lookahead_attested=True,

@@ -17,6 +17,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from alphaloop.core.backtest.capacity import estimate_capacity
 from alphaloop.core.backtest.costs import CostModel
 from alphaloop.core.backtest.engine import run_backtest
 from alphaloop.core.backtest.metrics import forward_returns, ic_series
@@ -25,13 +26,18 @@ from alphaloop.core.dsl.grammar import FactorSpec
 from alphaloop.core.stats.fdr import bh_fdr
 from alphaloop.core.stats.nw import newey_west_mean_t
 from alphaloop.core.stats.sharpe import deflated_sharpe_probability
+from alphaloop.data.feature_panel import join_feature_panel, load_feature_panel
 from alphaloop.data.minute_store import MinuteStore
 from alphaloop.data.universe import build_universe
+from alphaloop.execution.adapters import JournalingAdapter
+from alphaloop.execution.intents import compile_plan
+from alphaloop.execution.plan import PlannedPosition, Provenance, TradePlan
 from alphaloop.govern.freeze import verify_freeze, write_freeze_manifest
 from alphaloop.govern.sealed import SealedLedger, sealed_key
 from alphaloop.govern.tokens import CapabilityToken, KernelGate
 from alphaloop.govern.trials import TrialLedger
 from alphaloop.infra.events import EventSink, emit
+from alphaloop.infra.hashing import content_hash
 from alphaloop.infra.jsonio import atomic_write_json
 from alphaloop.infra.seeds import derive_seed
 from alphaloop.loop.config import RunConfig
@@ -118,6 +124,18 @@ def _run(
     actions = store.read_corp_actions()
     adjusted = market.corporate_actions.adjust(daily, actions)
     adjusted = market.corporate_actions.flag_suspect_gaps(adjusted)
+    adjusted = adjusted.sort_values(["symbol", "trade_date"]).reset_index(drop=True)
+    for panel_ref in config.feature_panels:
+        feature_frame = load_feature_panel(
+            Path(panel_ref.path), expected_fingerprint=panel_ref.fingerprint
+        )
+        adjusted = join_feature_panel(adjusted, feature_frame)
+        emit(
+            "artifact",
+            "特征面板并入",
+            panel_id=panel_ref.panel_id,
+            build_config_hash=panel_ref.build_config_hash,
+        )
     adjusted = adjusted.sort_values(["symbol", "trade_date"]).reset_index(drop=True)
     forward = forward_returns(adjusted)
     max_lookback = max(len(train_days) // 2, 5)
@@ -332,15 +350,48 @@ def _run(
         "candidates": sorted(candidates, key=lambda item: item["trial_no"]),
         "final_pass": sorted(final_pass),
         "no_findings": len(final_pass) == 0,
+        "feature_panels": [
+            {"panel_id": ref.panel_id, "build_config_hash": ref.build_config_hash}
+            for ref in config.feature_panels
+        ],
     }
     atomic_write_json(out_dir / "gate_report.json", gate_report)
     feedback = policy.digest(gate_report)
     if feedback is not None:
         atomic_write_json(out_dir / "feedback.json", feedback)
 
+    plan_written = False
+    if final_pass:
+        emit("phase", "交易计划")
+        best_record = max(
+            (record for record in candidates if record.get("outcome") == "accepted"),
+            key=lambda record: record.get("net_t_after_cost", 0.0),
+        )
+        best_spec = next(
+            spec for spec in survivors if spec.factor_id() == best_record["factor_id"]
+        )
+        plan = _build_trade_plan(
+            best_spec,
+            best_record,
+            adjusted,
+            market,
+            config,
+            freeze_hash=freeze_hash,
+            sealed_key_value=key,
+        )
+        if plan is not None:
+            atomic_write_json(out_dir / "trade_plan.json", plan.to_json())
+            intents = compile_plan(plan, market.execution, notional=config.plan_notional)
+            adapter = JournalingAdapter(out_dir / "order_intents.jsonl")
+            for intent in intents:
+                adapter.submit(intent)
+            plan_written = True
+            emit("artifact", "交易计划产出", plan_id=plan.plan_id, n_intents=len(intents))
+
     summary = {
         "run_id": config.run_id,
         "market_id": market.market_id,
+        "trade_plan_written": plan_written,
         "mode": config.mode,
         "protocol_id": config.protocol_id(),
         "n_proposed": n_proposed_total,
@@ -442,3 +493,85 @@ def _holdout_backtest(
         "n_suspect_dropped": report.n_suspect_dropped,
         "cost_adjusted": True,
     }
+
+
+def _build_trade_plan(
+    spec: FactorSpec,
+    record: dict[str, Any],
+    panel: pd.DataFrame,
+    market: MarketSpec,
+    config: RunConfig,
+    *,
+    freeze_hash: str,
+    sealed_key_value: str,
+) -> TradePlan | None:
+    """由通过门控的最优候选构造交易计划；无可买标的时返回 None。
+
+    选仓依据保留段最后一个交易日的因子得分与可交易性；预期净收益取
+    保留段回测的成本后日均收益（bps 口径）；容量按 20 日均成交额与
+    2% 参与率反推，成交额为估算值时随字段声明。
+    """
+    values = evaluate(spec, panel)
+    scored = panel[["symbol", "trade_date", "close", "amount", "amount_is_estimated"]].assign(
+        score=values
+    )
+    flagged = market.tradability.attach_flags(
+        panel.sort_values(["symbol", "trade_date"]).reset_index(drop=True)
+    )
+    last_day = max(scored["trade_date"])
+    latest = scored[scored["trade_date"] == last_day].dropna(subset=["score"])
+    tradable = flagged[(flagged["trade_date"] == last_day) & flagged["buy_ok"]]["symbol"]
+    latest = latest[latest["symbol"].isin(set(tradable))]
+    latest = latest.sort_values("score", ascending=False).head(config.gate.top_k)
+    if latest.empty:
+        return None
+    weight = 1.0 / config.gate.top_k
+    window = scored[scored["trade_date"] >= sorted(scored["trade_date"].unique())[-20]]
+    adv = window.groupby("symbol")["amount"].mean()
+    amount_estimated = bool(panel["amount_is_estimated"].any())
+    positions = []
+    for row in latest.itertuples():
+        capacity = estimate_capacity(
+            {str(row.symbol): weight},
+            adv,
+            participation_cap=0.02,
+            amount_is_estimated=amount_estimated,
+        )
+        positions.append(
+            PlannedPosition(
+                symbol=str(row.symbol),
+                side="long",
+                target_weight=weight,
+                entry_reference_price=float(row.close),
+                entry_style="next_session_close",
+                exit_framework=(
+                    f"最短持有 {market.execution.min_holding_days} 个交易日，"
+                    "按信号衰减于次一交易日收盘再平衡（与回测口径一致）"
+                ),
+                expected_net_return_bps_after_cost=float(record["net_mean_daily_after_cost"])
+                * 1e4,
+                capacity_notional=capacity.capacity_notional,
+                capacity_is_estimated=amount_estimated,
+            )
+        )
+    plan_id = content_hash(
+        "trade-plan", config.run_id, record["factor_id"], last_day.isoformat()
+    )[:16]
+    return TradePlan(
+        plan_id=plan_id,
+        market_id=market.market_id,
+        as_of=last_day.isoformat(),
+        positions=tuple(positions),
+        cost_model_note=(
+            f"预期净收益为成本后口径（佣金 {config.gate.commission_bps}bp、"
+            f"滑点 {config.gate.slippage_bps}bp、卖出税费 "
+            f"{market.execution.stamp_tax_sell_bps}bp）"
+        ),
+        provenance=Provenance(
+            run_id=config.run_id,
+            factor_ids=(str(record["factor_id"]),),
+            gate_report_ref="gate_report.json",
+            sealed_key=sealed_key_value,
+            freeze_hash=freeze_hash,
+        ),
+    )

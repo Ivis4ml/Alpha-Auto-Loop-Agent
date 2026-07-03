@@ -9,7 +9,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-__all__ = ["FeaturePanelManifest", "FeaturePanelSource"]
+from alphaloop.infra.hashing import content_hash
+
+__all__ = ["FeaturePanelManifest", "FeaturePanelSource", "panel_content_fingerprint"]
+
+
+def panel_content_fingerprint(csv_text: str) -> str:
+    """特征面板内容指纹的规范算法：生产方与消费方共用同一实现。
+
+    csv_text 为面板 DataFrame 的确定性 CSV 文本（不含索引）。
+    """
+    return content_hash("feature-panel", csv_text)
 
 PanelGrain = Literal["date", "date_minute", "date_symbol", "date_minute_symbol"]
 

@@ -12,7 +12,7 @@ import json
 import sys
 from pathlib import Path
 
-from alphaloop.loop.config import GateConfig, RunConfig, SplitConfig
+from alphaloop.loop.config import FeaturePanelRef, GateConfig, RunConfig, SplitConfig
 from alphaloop.loop.engine import run_research_loop
 from apps.assembly import build_generator, build_policy, build_store
 
@@ -25,6 +25,9 @@ def _load_run_config(path: Path) -> RunConfig:
     split = SplitConfig(**payload.pop("split"))
     gate = GateConfig(**payload.pop("gate"))
     payload["field_scope"] = tuple(payload["field_scope"])
+    payload["feature_panels"] = tuple(
+        FeaturePanelRef(**item) for item in payload.get("feature_panels", [])
+    )
     return RunConfig(split=split, gate=gate, **payload)
 
 

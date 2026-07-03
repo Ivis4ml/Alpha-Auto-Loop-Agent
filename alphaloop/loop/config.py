@@ -16,7 +16,21 @@ from alphaloop.core.dsl.grammar import GRAMMAR_VERSION
 from alphaloop.core.schema import SCHEMA_VERSION
 from alphaloop.infra.hashing import content_hash
 
-__all__ = ["SplitConfig", "GateConfig", "RunConfig"]
+__all__ = ["SplitConfig", "GateConfig", "FeaturePanelRef", "RunConfig"]
+
+
+@dataclass(frozen=True, slots=True)
+class FeaturePanelRef:
+    """一个外部特征面板的消费声明：路径、内容指纹与构建配置哈希。
+
+    build_config_hash 来自面板 manifest，用于把"情绪产出被用于选股
+    决策"这一事实登记进运行产物（可追溯要求）。
+    """
+
+    panel_id: str
+    path: str
+    fingerprint: str
+    build_config_hash: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,6 +102,8 @@ class RunConfig:
     llm_reviewer_model: str | None = None
     prompt_version: str | None = None
     llm_cache_mode: str = "off"
+    feature_panels: tuple[FeaturePanelRef, ...] = ()
+    plan_notional: float = 1_000_000.0
 
     def __post_init__(self) -> None:
         if self.candidate_budget <= 0 or self.compute_budget <= 0:
@@ -136,6 +152,10 @@ class RunConfig:
             "llm_generator_model": self.llm_generator_model,
             "llm_reviewer_model": self.llm_reviewer_model,
             "prompt_version": self.prompt_version,
+            "feature_panels": [
+                (ref.panel_id, ref.fingerprint, ref.build_config_hash)
+                for ref in self.feature_panels
+            ],
         }
 
     def to_json(self) -> dict[str, Any]:
