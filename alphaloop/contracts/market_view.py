@@ -16,6 +16,10 @@ __all__ = ["MarketCalendarView"]
 class MarketCalendarView(Protocol):
     """跨市场统一的日历只读接口。"""
 
+    def timezone(self, market_id: str) -> str:
+        """返回该市场的 IANA 时区名，供 UTC 时间戳转本地墙钟。"""
+        ...
+
     def trading_days(self, market_id: str, start: date, end: date) -> list[date]:
         """返回闭区间内的交易日序列。"""
         ...
