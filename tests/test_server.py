@@ -128,3 +128,78 @@ class TestServer:
         status, body = _get(server_env, "/some/client/route")
         assert status == 200
         assert "工作台" in body
+
+
+class TestStoreCalendarView:
+    def test_adapter_over_market_spec(self, cn_store) -> None:  # noqa: ANN001
+        from datetime import date
+
+        from apps.assembly import StoreCalendarView
+
+        view = StoreCalendarView({"cn_ashare": cn_store.market})
+        assert view.timezone("cn_ashare") == "Asia/Shanghai"
+        days = view.trading_days("cn_ashare", date(2024, 1, 2), date(2024, 1, 10))
+        assert days[0] == date(2024, 1, 2)
+        cutoff = view.session_cutoff("cn_ashare", date(2024, 1, 2))
+        assert (cutoff.hour, cutoff.minute) == (15, 0)
+        assert view.next_trading_day("cn_ashare", date(2024, 1, 5)) == date(2024, 1, 8)
+        with pytest.raises(KeyError, match="未装配"):
+            view.timezone("mars")
+
+
+class TestNewsRoutesCrossThread:
+    def test_search_and_chat_from_server_threads(self, tmp_path: Path) -> None:
+        """新闻库连接须可被服务工作线程使用（多线程 HTTP 下的真实路径）。"""
+        from news.entity import EntityLinker, build_alias_entries
+        from news.qa import QaEngine
+        from news.retrieval import Retriever
+        from news.store import NewsItem, NewsStore
+
+        store = NewsStore(tmp_path / "news.db")
+        store.upsert(
+            [
+                NewsItem(
+                    source="synthetic",
+                    publish_ts="2024-05-06T02:00:00Z",
+                    visible_ts="2024-05-06T02:00:00Z",
+                    visible_basis="publish",
+                    title="贵州茅台业绩预增",
+                    content="贵州茅台预计净利润增长。",
+                    labels=(),
+                    corpus_batch="backfill",
+                )
+            ]
+        )
+        entries, _ = build_alias_entries([("600519.SH", "贵州茅台")])
+        linker = EntityLinker(entries)
+        links = [
+            (link.news_id, link.symbol, link.method, link.confidence, None, None)
+            for news_id, title, content in store.iter_items()
+            for link in linker.link(news_id, title, content)
+        ]
+        store.write_entities(links)
+        retriever = Retriever(store)
+        server = create_server(
+            AppContext(
+                runs_dir=tmp_path / "runs",
+                retriever=retriever,
+                qa_engine=QaEngine(retriever, linker),
+            )
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            status, body = _get(
+                server.server_address, "/api/news/search?q=%E8%8C%85%E5%8F%B0"
+            )
+            assert status == 200
+            assert len(body["results"]) == 1
+            status, body = _post(
+                server.server_address,
+                "/api/chat",
+                {"question": "贵州茅台有什么新闻", "symbol": "600519.SH"},
+            )
+            assert status == 200
+            assert body["answer"]["evidence_mode"] == "evidence"
+        finally:
+            server.shutdown()

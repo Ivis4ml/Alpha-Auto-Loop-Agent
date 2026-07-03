@@ -275,3 +275,53 @@ class TestQa:
         answer = engine.answer("平安银行的回购进展如何")
         assert answer.evidence_mode == "evidence"
         assert any("平安银行" in c.title for c in answer.citations)
+
+
+class TestPanelBoundary:
+    def test_news_after_last_day_cutoff_is_dropped(self, tmp_path: Path) -> None:
+        """窗口末日收盘后的新闻应被丢弃而不是触发日历越界异常。"""
+        store = NewsStore(tmp_path / "news.db", clock=_fixed_clock)
+        store.upsert(
+            [
+                NewsItem(
+                    source="synthetic",
+                    publish_ts="2024-05-06T02:00:00Z",
+                    visible_ts="2024-05-06T02:00:00Z",
+                    visible_basis="publish",
+                    title="贵州茅台盘中新闻",
+                    content="贵州茅台盘中公告。",
+                    labels=(),
+                    corpus_batch="backfill",
+                ),
+                NewsItem(
+                    source="synthetic",
+                    publish_ts="2024-05-09T09:00:00Z",
+                    visible_ts="2024-05-09T09:00:00Z",
+                    visible_basis="publish",
+                    title="贵州茅台收盘后新闻",
+                    content="贵州茅台收盘后公告（北京 17 时，末日收盘之后）。",
+                    labels=(),
+                    corpus_batch="backfill",
+                ),
+            ]
+        )
+        entries, _ = build_alias_entries(LISTING)
+        linker = EntityLinker(entries)
+        links = []
+        for news_id, title, content in store.iter_items():
+            for link in linker.link(news_id, title, content):
+                links.append(
+                    (link.news_id, link.symbol, link.method, link.confidence, None, None)
+                )
+        store.write_entities(links)
+        result = build_sentiment_panel(
+            store,
+            load_default_lexicon(),
+            StubCalendar(),
+            market_id="cn_ashare",
+            start=date(2024, 5, 6),
+            end=date(2024, 5, 9),
+            out_dir=tmp_path / "panel",
+        )
+        assert result.panel["n_news"].sum() == 1
+        assert set(result.panel["trade_date"]) == {"2024-05-06"}

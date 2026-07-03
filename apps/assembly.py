@@ -6,6 +6,7 @@ market_id 与注册的构建器工作。
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from pathlib import Path
 
 from alphaloop.data.calendar_source import scan_trading_days
@@ -18,9 +19,10 @@ from alphaloop.loop.generators import (
     TemplateSearchGenerator,
 )
 from alphaloop.market.cn_ashare import build_cn_ashare_spec
+from alphaloop.market.protocols import MarketSpec
 from alphaloop.market.us_equity import build_us_equity_spec
 
-__all__ = ["build_store", "build_generator", "build_policy"]
+__all__ = ["build_store", "build_generator", "build_policy", "StoreCalendarView"]
 
 
 def build_store(market_id: str, root: Path) -> MinuteStore:
@@ -51,3 +53,33 @@ def build_policy(mode: str) -> FeedbackPolicy:
     if mode == "B":
         return ModeBPolicy()
     raise ValueError(f"未知反馈模式: {mode!r}")
+
+
+class StoreCalendarView:
+    """由市场描述实现 contracts.MarketCalendarView 的生产适配器。
+
+    新闻子系统经本适配器取得交易日历与收盘截止时刻，做情绪面板的
+    point-in-time 归日，不直接依赖市场描述层。
+    """
+
+    def __init__(self, specs: dict[str, MarketSpec]) -> None:
+        self._specs = specs
+
+    def _spec(self, market_id: str) -> MarketSpec:
+        try:
+            return self._specs[market_id]
+        except KeyError:
+            raise KeyError(f"市场 {market_id} 未装配日历视图") from None
+
+    def timezone(self, market_id: str) -> str:
+        return self._spec(market_id).conventions.timezone
+
+    def trading_days(self, market_id: str, start: date, end: date) -> list[date]:
+        return self._spec(market_id).calendar.trading_days(start, end)
+
+    def session_cutoff(self, market_id: str, day: date) -> datetime:
+        label = self._spec(market_id).calendar.session_cutoff_label()
+        return datetime(day.year, day.month, day.day, int(label[:2]), int(label[2:]))
+
+    def next_trading_day(self, market_id: str, day: date) -> date:
+        return self._spec(market_id).calendar.next_trading_day(day)

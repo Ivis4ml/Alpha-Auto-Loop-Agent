@@ -97,7 +97,10 @@ class NewsStore:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self.db_path = db_path
         self._clock = clock
-        self.connection = sqlite3.connect(db_path)
+        # HTTP 服务以多线程处理请求，检索为只读；CPython 的 sqlite3 在
+        # SQLite 序列化线程模式（threadsafety == 3）下允许跨线程共享连接。
+        allow_cross_thread = sqlite3.threadsafety == 3
+        self.connection = sqlite3.connect(db_path, check_same_thread=not allow_cross_thread)
         self.connection.executescript(_SCHEMA)
         self.connection.commit()
 

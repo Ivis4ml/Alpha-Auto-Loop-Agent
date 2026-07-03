@@ -170,5 +170,9 @@ def _assign_trade_date(
         cutoff = calendar.session_cutoff(market_id, local_day)
         if local_moment <= cutoff:
             return local_day
-    next_day = calendar.next_trading_day(market_id, local_day)
+    try:
+        next_day = calendar.next_trading_day(market_id, local_day)
+    except ValueError:
+        # 日历覆盖范围之后没有已知交易日（窗口末日收盘后的新闻），丢弃。
+        return None
     return next_day if next_day <= last_day else None
