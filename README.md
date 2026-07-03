@@ -27,12 +27,27 @@ tools/          CI 检查脚本（分层绕过检测、市场中立断言）
 docs/           文档与合规记录
 ```
 
-## 开发环境
+## 快速开始
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
+
+# 执行一轮研究循环（配置文件示例见 tests/test_loop.py 的 RunConfig 构造）
+.venv/bin/python -m apps.cli run-loop \
+  --config run_config.json --data-root <minute_db 目录> \
+  --out runs/run-001 --sealed-root runs_cache/sealed
+
+# 构建前端并启动界面
+(cd gui && npm install && npm run build)
+.venv/bin/python -m apps.cli serve --runs-dir runs
 ```
+
+文档：`docs/architecture.md`（架构与双市场差异收敛点）、
+`docs/governance.md`（科研诚信条款逐条映射）、`docs/acceptance.md`
+（验收对照）、`docs/compliance/`（财联社条款核实记录）。
+
+## 开发环境
 
 本地执行与 CI 相同的检查：
 

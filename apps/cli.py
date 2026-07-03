@@ -15,6 +15,11 @@ from pathlib import Path
 from alphaloop.loop.config import FeaturePanelRef, GateConfig, RunConfig, SplitConfig
 from alphaloop.loop.engine import run_research_loop
 from apps.assembly import build_generator, build_policy, build_store
+from apps.server import AppContext, create_server
+from news.entity import EntityLinker, build_alias_entries
+from news.qa import QaEngine
+from news.retrieval import Retriever
+from news.store import NewsStore
 
 __all__ = ["main"]
 
@@ -46,6 +51,34 @@ def _cmd_run_loop(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_serve(args: argparse.Namespace) -> int:
+    retriever = None
+    qa_engine = None
+    if args.news_db:
+        store = NewsStore(Path(args.news_db))
+        retriever = Retriever(store)
+        listing_rows = store.connection.execute(
+            "SELECT DISTINCT symbol, symbol FROM news_entity"
+        ).fetchall()
+        linker = EntityLinker(build_alias_entries([(r[0], r[1]) for r in listing_rows])[0])
+        qa_engine = QaEngine(retriever, linker)
+    context = AppContext(
+        runs_dir=Path(args.runs_dir),
+        static_dir=Path(args.static_dir) if args.static_dir else None,
+        retriever=retriever,
+        qa_engine=qa_engine,
+        sentiment_panel_path=Path(args.sentiment_panel) if args.sentiment_panel else None,
+    )
+    server = create_server(context, host=args.host, port=args.port)
+    host_text = str(server.server_address[0])
+    print(f"服务已启动: http://{host_text}:{server.server_address[1]}")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        server.shutdown()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="alphaloop", description="Alpha-Auto-Loop-Agent 命令行")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -55,6 +88,14 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument("--out", required=True, help="运行产物输出目录")
     run_parser.add_argument("--sealed-root", required=True, help="封存账本目录")
     run_parser.set_defaults(handler=_cmd_run_loop)
+    serve_parser = subparsers.add_parser("serve", help="启动 HTTP 服务与界面")
+    serve_parser.add_argument("--runs-dir", required=True, help="运行产物目录")
+    serve_parser.add_argument("--static-dir", default="gui/dist", help="前端构建产物目录")
+    serve_parser.add_argument("--news-db", default=None, help="新闻库 SQLite 路径（可选）")
+    serve_parser.add_argument("--sentiment-panel", default=None, help="情绪面板 parquet（可选）")
+    serve_parser.add_argument("--host", default="127.0.0.1")
+    serve_parser.add_argument("--port", type=int, default=8710)
+    serve_parser.set_defaults(handler=_cmd_serve)
     args = parser.parse_args(argv)
     try:
         return int(args.handler(args))
