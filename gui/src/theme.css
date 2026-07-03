@@ -1,0 +1,112 @@
+/*
+ * 设计令牌（design tokens）。
+ *
+ * 全部颜色、字体、间距、圆角集中在本文件的 CSS 变量中，组件一律通过
+ * var(...) 引用，禁止写死颜色。浅色为默认主题，深色主题通过在根元素
+ * 上设置 data-theme="dark" 切换。
+ */
+
+:root {
+  /* 字体 */
+  --font-ui: -apple-system, "SF Pro Text", "PingFang SC", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+
+  /* 间距，8px 网格（half step 为 4px） */
+  --space-0: 4px;
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+
+  /* 圆角 */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* 中性灰阶 */
+  --color-bg: #f4f4f2;
+  --color-surface: #fbfbfa;
+  --color-surface-muted: #f0f0ee;
+  --color-border: #e2e1dd;
+  --color-border-strong: #cfcec9;
+  --color-text: #1c1c1a;
+  --color-text-secondary: #5c5b56;
+  --color-text-tertiary: #8b8a83;
+
+  /* 单一低饱和强调色（石墨蓝） */
+  --color-accent: #4a6b8a;
+  --color-accent-strong: #3d5a75;
+  --color-accent-soft: rgba(74, 107, 138, 0.1);
+  --color-accent-contrast: #ffffff;
+
+  /* 语义色：仅用于通过/拒绝与警示 */
+  --color-pass: #2e7d43;
+  --color-pass-soft: rgba(46, 125, 67, 0.12);
+  --color-reject: #b3372f;
+  --color-reject-soft: rgba(179, 55, 47, 0.1);
+  --color-warn: #9a6700;
+  --color-warn-soft: rgba(212, 167, 44, 0.16);
+
+  /* 情绪发散色板：蓝正橙负，兼顾色觉可用性（已经过 CVD 校验） */
+  --viz-pos: #1c5cab;
+  --viz-mid: #f0efec;
+  --viz-neg: #c2410c;
+}
+
+[data-theme="dark"] {
+  --color-bg: #151617;
+  --color-surface: #1d1f21;
+  --color-surface-muted: #26282b;
+  --color-border: #33363a;
+  --color-border-strong: #45484d;
+  --color-text: #e8e8e5;
+  --color-text-secondary: #a9a9a2;
+  --color-text-tertiary: #7a7a73;
+
+  --color-accent: #7d9cb8;
+  --color-accent-strong: #92b0ca;
+  --color-accent-soft: rgba(125, 156, 184, 0.14);
+  --color-accent-contrast: #14202b;
+
+  --color-pass: #57a06d;
+  --color-pass-soft: rgba(87, 160, 109, 0.16);
+  --color-reject: #d0685c;
+  --color-reject-soft: rgba(208, 104, 92, 0.14);
+  --color-warn: #d0a04a;
+  --color-warn-soft: rgba(208, 160, 74, 0.16);
+
+  --viz-pos: #4f95e8;
+  --viz-mid: #34363a;
+  --viz-neg: #d95926;
+}
+
+/* 基础样式 */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  line-height: 1.55;
+  color: var(--color-text);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+code,
+pre {
+  font-family: var(--font-mono);
+}

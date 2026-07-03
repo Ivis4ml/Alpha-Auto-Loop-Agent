@@ -14,3 +14,5 @@ node_modules/
 /runs_cache/
 /llm_cache/
 /data/
+/gui/node_modules/
+/gui/dist/
